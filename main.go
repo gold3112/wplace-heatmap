@@ -25,6 +25,7 @@ type Config struct {
 	Zoom       int
 	Fullsize   string
 	TileRange  string
+	SingleTile string
 	Versions   string
 	OutputFile string
 	CacheDir   string
@@ -101,7 +102,6 @@ func fetchVersionsFromSite() ([]string, error) {
 		return nil, err
 	}
 
-	// Regex to find version: 'vXX.XXX'
 	re := regexp.MustCompile(`version:\s*'([^']+)'`)
 	matches := re.FindAllStringSubmatch(string(body), -1)
 
@@ -226,7 +226,8 @@ func interactiveMode() Config {
 	fmt.Println("1. Fullsize (6 parts: tileX-tileY-pixelX-pixelY-width-height)")
 	fmt.Println("2. Fullsize (8 parts: tileX1-tileY1-pixelX1-pixelY1-tileX2-tileY2-pixelX2-pixelY2)")
 	fmt.Println("3. Tile Range (minTX-minTY_maxTX-maxTY)")
-	fmt.Print("Choice [1-3]: ")
+	fmt.Println("4. Single Tile (tileX-tileY)")
+	fmt.Print("Choice [1-4]: ")
 	choice, _ := reader.ReadString('\n')
 	choice = strings.TrimSpace(choice)
 
@@ -239,6 +240,10 @@ func interactiveMode() Config {
 		fmt.Print("Enter tile range (e.g. 1818-806_1819-806): ")
 		val, _ := reader.ReadString('\n')
 		config.TileRange = strings.TrimSpace(val)
+	case "4":
+		fmt.Print("Enter tile (e.g. 1818-806): ")
+		val, _ := reader.ReadString('\n')
+		config.SingleTile = strings.TrimSpace(val)
 	default:
 		fmt.Println("Invalid choice, exiting.")
 		os.Exit(1)
@@ -259,13 +264,14 @@ func main() {
 	flag.IntVar(&config.Zoom, "zoom", 11, "Zoom level")
 	flag.StringVar(&config.Fullsize, "fullsize", "", "Fullsize range (6 or 8 parts)")
 	flag.StringVar(&config.TileRange, "tiles", "", "Tile range mode (minX-minY_maxX-maxY)")
+	flag.StringVar(&config.SingleTile, "tile", "", "Single tile mode (tileX-tileY)")
 	flag.StringVar(&config.Versions, "vfile", "versions.txt", "Versions file")
 	flag.StringVar(&config.OutputFile, "out", "heatmap.png", "Output filename")
 	flag.StringVar(&config.CacheDir, "cache", "tile_cache", "Tile cache directory")
 	flag.BoolVar(&config.AutoFetch, "auto", true, "Automatically fetch versions from site")
 	flag.Parse()
 
-	if config.Fullsize == "" && config.TileRange == "" && flag.NFlag() == 0 {
+	if config.Fullsize == "" && config.TileRange == "" && config.SingleTile == "" && flag.NFlag() == 0 {
 		config = interactiveMode()
 	}
 
@@ -304,6 +310,17 @@ func main() {
 		startAbsY = minTY * TileSize
 		width = (maxTX - minTX + 1) * TileSize
 		height = (maxTY - minTY + 1) * TileSize
+	} else if config.SingleTile != "" {
+		parts := strings.Split(config.SingleTile, "-")
+		if len(parts) != 2 {
+			log.Fatalf("Invalid single tile format: %s", config.SingleTile)
+		}
+		tx, _ := strconv.Atoi(parts[0])
+		ty, _ := strconv.Atoi(parts[1])
+		startAbsX = tx * TileSize
+		startAbsY = ty * TileSize
+		width = TileSize
+		height = TileSize
 	} else {
 		startAbsX = 1818 * TileSize
 		startAbsY = 806 * TileSize
