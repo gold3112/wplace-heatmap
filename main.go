@@ -8,11 +8,13 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"io"
 	"log"
 	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -26,6 +28,7 @@ type Config struct {
 	Versions   string
 	OutputFile string
 	CacheDir   string
+	AutoFetch  bool
 }
 
 func parseFullsize(fs string) (startX, startY, width, height int, err error) {
@@ -84,6 +87,36 @@ func parseTileRange(tr string) (minTX, minTY, maxTX, maxTY int, err error) {
 	if x1 > x2 { x1, x2 = x2, x1 }
 	if y1 > y2 { y1, y2 = y2, y1 }
 	return x1, y1, x2, y2, nil
+}
+
+func fetchVersionsFromSite() ([]string, error) {
+	resp, err := http.Get("https://wplace.eralyon.net/")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Regex to find version: 'vXX.XXX'
+	re := regexp.MustCompile(`version:\s*'([^']+)'`)
+	matches := re.FindAllStringSubmatch(string(body), -1)
+
+	var versions []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			versions = append(versions, match[1])
+		}
+	}
+
+	if len(versions) == 0 {
+		return nil, fmt.Errorf("no versions found in site HTML")
+	}
+
+	return versions, nil
 }
 
 func downloadRawTile(version, cacheDir string, zoom, x, y int) (image.Image, error) {
@@ -177,10 +210,19 @@ func interactiveMode() Config {
 		Versions:   "versions.txt",
 		OutputFile: "heatmap.png",
 		CacheDir:   "tile_cache",
+		AutoFetch:  true,
 	}
 
 	fmt.Println("=== Wplace Heatmap Generator (Interactive Mode) ===")
-	fmt.Println("Select Mode:")
+	
+	fmt.Print("Fetch versions automatically from wplace.eralyon.net? [Y/n]: ")
+	autoStr, _ := reader.ReadString('\n')
+	autoStr = strings.ToLower(strings.TrimSpace(autoStr))
+	if autoStr == "n" {
+		config.AutoFetch = false
+	}
+
+	fmt.Println("Select Coordinate Mode:")
 	fmt.Println("1. Fullsize (6 parts: tileX-tileY-pixelX-pixelY-width-height)")
 	fmt.Println("2. Fullsize (8 parts: tileX1-tileY1-pixelX1-pixelY1-tileX2-tileY2-pixelX2-pixelY2)")
 	fmt.Println("3. Tile Range (minTX-minTY_maxTX-maxTY)")
@@ -220,16 +262,31 @@ func main() {
 	flag.StringVar(&config.Versions, "vfile", "versions.txt", "Versions file")
 	flag.StringVar(&config.OutputFile, "out", "heatmap.png", "Output filename")
 	flag.StringVar(&config.CacheDir, "cache", "tile_cache", "Tile cache directory")
+	flag.BoolVar(&config.AutoFetch, "auto", true, "Automatically fetch versions from site")
 	flag.Parse()
 
-	// If no positional arguments and no primary flags, use interactive mode
 	if config.Fullsize == "" && config.TileRange == "" && flag.NFlag() == 0 {
 		config = interactiveMode()
 	}
 
-	versions, err := readVersions(config.Versions)
-	if err != nil {
-		log.Fatalf("Failed to read versions: %v", err)
+	var versions []string
+	var err error
+	if config.AutoFetch {
+		fmt.Print("Fetching versions from wplace.eralyon.net...")
+		versions, err = fetchVersionsFromSite()
+		if err != nil {
+			fmt.Printf("\nWarning: Auto-fetch failed: %v. Falling back to file.\n", err)
+			config.AutoFetch = false
+		} else {
+			fmt.Printf(" Found %d versions.\n", len(versions))
+		}
+	}
+
+	if !config.AutoFetch {
+		versions, err = readVersions(config.Versions)
+		if err != nil {
+			log.Fatalf("Failed to read versions from file: %v", err)
+		}
 	}
 
 	var startAbsX, startAbsY, width, height int
@@ -248,7 +305,6 @@ func main() {
 		width = (maxTX - minTX + 1) * TileSize
 		height = (maxTY - minTY + 1) * TileSize
 	} else {
-		// Default if somehow reached here
 		startAbsX = 1818 * TileSize
 		startAbsY = 806 * TileSize
 		width = 1000
