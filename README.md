@@ -21,10 +21,15 @@ wplace.live のアーカイブサイト ([wplace.eralyon.net](https://wplace.era
 
 ## インストール
 
+### バイナリを使用する場合 (推奨)
+[GitHub Releases](https://github.com/gold3112/wplace-heatmap/releases/tag/wplace-tools) から最新の `wplace-heatmap.exe` をダウンロードして実行してください。
+
+### ソースからビルドする場合
 ```bash
-git clone <repository-url>
+git clone https://github.com/gold3112/wplace-heatmap.git
 cd wplace-heatmap
 go mod tidy
+go build -o wplace-heatmap.exe main.go
 ```
 
 ## 使い方
