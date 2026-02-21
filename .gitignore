@@ -1,0 +1,5 @@
+tile_cache/
+*.png
+# Ignore executables
+*.exe
+wplace-heatmap
