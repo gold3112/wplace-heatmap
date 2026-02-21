@@ -3,3 +3,7 @@ tile_cache/
 # Ignore executables
 *.exe
 wplace-heatmap
+
+# Allow pictures in pict directory
+!pict/
+!pict/*.png
